@@ -237,7 +237,7 @@ impl CommitComponent {
 
 	fn commit_with_msg(
 		&mut self,
-		msg: String,
+		mut msg: String,
 	) -> Result<CommitResult> {
 		// on exit verify should always be on
 		let verify = self.verify;
@@ -255,7 +255,8 @@ impl CommitComponent {
 				return Ok(CommitResult::Aborted);
 			}
 		}
-		let mut msg = message_prettify(msg, Some(b'#'))?;
+
+		msg = message_prettify(msg, Some(b'#'))?;
 		if verify {
 			// run commit message check hook - can reject commit
 			if let HookResult::NotOk(e) =
@@ -354,63 +355,80 @@ impl CommitComponent {
 		self.mode = Mode::Normal;
 
 		let repo_state = sync::repo_state(&self.repo.borrow())?;
-
-		self.mode =
-			if repo_state != RepoState::Clean && reword.is_some() {
-				bail!("cannot reword while repo is not in a clean state");
-			} else if let Some(reword_id) = reword {
-				self.input.set_text(
-					sync::get_commit_details(
+		let mut hook_id: String = String::new();
+		let mut hook_type = "commit"; // a plain commit
+		self.mode = if repo_state != RepoState::Clean
+			&& reword.is_some()
+		{
+			bail!("cannot reword while repo is not in a clean state");
+		} else if let Some(reword_id) = reword {
+			hook_type = "amend";
+			let cd = sync::get_commit_details(
+				&self.repo.borrow(),
+				reword_id,
+			)?;
+			hook_id = cd.hash;
+			self.input
+				.set_text(cd.message.unwrap_or_default().combine());
+			self.input.set_title(strings::commit_reword_title());
+			Mode::Reword(reword_id)
+		} else {
+			match repo_state {
+				RepoState::Merge => {
+					let ids =
+						sync::mergehead_ids(&self.repo.borrow())?;
+					self.input
+						.set_title(strings::commit_title_merge());
+					self.input.set_text(sync::merge_msg(
 						&self.repo.borrow(),
-						reword_id,
-					)?
-					.message
-					.unwrap_or_default()
-					.combine(),
-				);
-				self.input.set_title(strings::commit_reword_title());
-				Mode::Reword(reword_id)
-			} else {
-				match repo_state {
-					RepoState::Merge => {
-						let ids =
-							sync::mergehead_ids(&self.repo.borrow())?;
-						self.input
-							.set_title(strings::commit_title_merge());
-						self.input.set_text(sync::merge_msg(
-							&self.repo.borrow(),
-						)?);
-						Mode::Merge(ids)
-					}
-					RepoState::Revert => {
-						self.input
-							.set_title(strings::commit_title_revert());
-						self.input.set_text(sync::merge_msg(
-							&self.repo.borrow(),
-						)?);
-						Mode::Revert
-					}
-
-					_ => {
-						self.commit_template = get_config_string(
-							&self.repo.borrow(),
-							"commit.template",
-						)
-						.ok()
-						.flatten()
-						.and_then(|path| read_to_string(path).ok());
-
-						if self.is_empty() {
-							if let Some(s) = &self.commit_template {
-								self.input.set_text(s.clone());
-							}
-						}
-						self.input.set_title(strings::commit_title());
-						Mode::Normal
-					}
+					)?);
+					hook_type = "merge";
+					Mode::Merge(ids)
 				}
-			};
+				RepoState::Revert => {
+					self.input
+						.set_title(strings::commit_title_revert());
+					self.input.set_text(sync::merge_msg(
+						&self.repo.borrow(),
+					)?);
+					Mode::Revert
+				}
 
+				_ => {
+					self.commit_template = get_config_string(
+						&self.repo.borrow(),
+						"commit.template",
+					)
+					.ok()
+					.flatten()
+					.and_then(|path| read_to_string(path).ok());
+
+					if self.is_empty() {
+						if let Some(s) = &self.commit_template {
+							hook_type = "template";
+							self.input.set_text(s.clone());
+						};
+					}
+					self.input.set_title(strings::commit_title());
+					Mode::Normal
+				}
+			}
+		};
+		let mut msg = self.input.get_text().to_string();
+		// run prepare commit message check hook - cannot reject commit
+		if let HookResult::NotOk(e) = sync::hooks_prepare_commit_msg(
+			&self.repo.borrow(),
+			&mut msg,
+			hook_type.to_string(),
+			hook_id,
+		)? {
+			log::error!("prepare-commit-msg hook error: {}", e);
+			self.queue.push(InternalEvent::ShowErrorMsg(format!(
+				"commit-msg hook error:\n{e}"
+			)));
+			return Ok(());
+		}
+		self.input.set_text(msg);
 		self.commit_msg_history_idx = 0;
 		self.input.show()?;
 

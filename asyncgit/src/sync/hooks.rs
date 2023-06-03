@@ -12,6 +12,7 @@ use std::{
 const HOOK_POST_COMMIT: &str = "post-commit";
 const HOOK_PRE_COMMIT: &str = "pre-commit";
 const HOOK_COMMIT_MSG: &str = "commit-msg";
+const HOOK_PREP_COMMIT_MSG: &str = "prepare-commit-msg";
 const HOOK_COMMIT_MSG_TEMP_FILE: &str = "COMMIT_EDITMSG";
 
 struct HookPaths {
@@ -34,7 +35,7 @@ impl HookPaths {
 			.and_then(|config| config.get_string("core.hooksPath"))
 			.map_or_else(
 				|e| {
-					log::error!("hookspath error: {}", e);
+					//log::error!("hookspath error: {}", e);
 					repo.path().to_path_buf().join("hooks/")
 				},
 				PathBuf::from,
@@ -66,11 +67,14 @@ impl HookPaths {
 	/// see <https://git-scm.com/docs/githooks>
 	pub fn run_hook(&self, args: &[&str]) -> Result<HookResult> {
 		let arg_str = format!("{:?} {}", self.hook, args.join(" "));
-		// Use -l to avoid "command not found" on Windows.
+		log::trace!(
+			"run hook '{:?}' in '{:?}' args {:?}",
+			self.hook,
+			self.pwd,
+			arg_str
+		); // Use -l to avoid "command not found" on Windows.
 		let bash_args =
 			vec!["-l".to_string(), "-c".to_string(), arg_str];
-
-		log::trace!("run hook '{:?}' in '{:?}'", self.hook, self.pwd);
 
 		let git_bash = find_bash_executable()
 			.unwrap_or_else(|| PathBuf::from("bash"));
@@ -97,7 +101,43 @@ impl HookPaths {
 		}
 	}
 }
+/// this hook is documented here <https://git-scm.com/docs/githooks#_prepare_commit_msg>
+/// we use the same convention as other git clients to create a temp file containing
+/// the commit message at `<.git|hooksPath>/COMMIT_EDITMSG` and pass it's relative path
+/// arguments passed are
+///  - the path of the message file
+///  - the source of the messgae "message", "template","merge","squash" or "commit"
+///  - the id of a commit if -c -C or amend
+pub fn hooks_prepare_commit_msg(
+	repo_path: &RepoPath,
+	msg: &mut String,
+	reason: String,
+	commit_id: String,
+) -> Result<HookResult> {
+	scope_time!("hooks_prepare_commit_msg");
 
+	let hooks_path = HookPaths::new(repo_path, HOOK_PREP_COMMIT_MSG)?;
+
+	if hooks_path.is_executable() {
+		let temp_file =
+			hooks_path.git.join(HOOK_COMMIT_MSG_TEMP_FILE);
+		File::create(&temp_file)?.write_all(msg.as_bytes())?;
+
+		let res = hooks_path.run_hook(&[
+			temp_file.as_os_str().to_string_lossy().as_ref(),
+			reason.as_ref(),
+			commit_id.as_ref(),
+		])?;
+
+		// load possibly altered msg
+		msg.clear();
+		File::open(temp_file)?.read_to_string(msg)?;
+
+		Ok(res)
+	} else {
+		Ok(HookResult::Ok)
+	}
+}
 /// this hook is documented here <https://git-scm.com/docs/githooks#_commit_msg>
 /// we use the same convention as other git clients to create a temp file containing
 /// the commit message at `<.git|hooksPath>/COMMIT_EDITMSG` and pass it's relative path as the only
