@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.28.1] - 2026-03-21
+
 ### Changed
+* support proper pre-push hook ([#2809](https://github.com/gitui-org/gitui/issues/2809))
 * improve `gitui --version` message [[@hlsxx](https://github.com/hlsxx)] ([#2838](https://github.com/gitui-org/gitui/issues/2838))
 * rust msrv bumped to `1.88`
 
