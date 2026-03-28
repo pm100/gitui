@@ -1,6 +1,6 @@
 [package]
 name = "gitui"
-version = "0.28.0"
+version = "0.28.1"
 authors = ["extrawurst <mail@rusticorn.com>"]
 description = "blazing fast terminal-ui for git"
 edition = "2021"
@@ -22,16 +22,6 @@ members = [
   "git2-testing",
   "scopetime",
 ]
-
-[features]
-default = ["ghemoji", "regex-fancy", "trace-libgit", "vendor-openssl"]
-ghemoji = ["gh-emoji"]
-# regex-* features are mutually exclusive.
-regex-fancy = ["syntect/regex-fancy", "two-face/syntect-fancy"]
-regex-onig = ["syntect/regex-onig", "two-face/syntect-onig"]
-timing = ["scopetime/enabled"]
-trace-libgit = ["asyncgit/trace-libgit"]
-vendor-openssl = ["asyncgit/vendor-openssl"]
 
 [dependencies]
 anyhow = "1.0"
@@ -84,16 +74,26 @@ unicode-truncate = "2.0"
 unicode-width = "0.2"
 which = "8.0"
 
-[build-dependencies]
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
-
 [dev-dependencies]
 env_logger = "0.11"
 pretty_assertions = "1.4"
 tempfile = "3"
 
+[build-dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
 [badges]
 maintenance = { status = "actively-developed" }
+
+[features]
+default = ["ghemoji", "regex-fancy", "trace-libgit", "vendor-openssl"]
+ghemoji = ["gh-emoji"]
+# regex-* features are mutually exclusive.
+regex-fancy = ["syntect/regex-fancy", "two-face/syntect-fancy"]
+regex-onig = ["syntect/regex-onig", "two-face/syntect-onig"]
+timing = ["scopetime/enabled"]
+trace-libgit = ["asyncgit/trace-libgit"]
+vendor-openssl = ["asyncgit/vendor-openssl"]
 
 # make debug build as fast as release
 # usage of utf8 encoding inside tui
@@ -102,7 +102,7 @@ maintenance = { status = "actively-developed" }
 opt-level = 3
 
 [profile.release]
-opt-level = "z"     # Optimize for size.
+opt-level = "z"  # Optimize for size.
 strip = "debuginfo"
 lto = true
 codegen-units = 1
